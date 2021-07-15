@@ -123,7 +123,7 @@
     	}
     }
 
-这三个新函数就是在thread.c里需要实现的方法。
+这三个新函数就是在thread.c里需要实现的方法。注意，这些方法里面开始用到lib/kernal目录下提供的链表list数据结构。使用这个数据结构是因为，实验自带只提供list，事实上也可以自己手写一个其他的数据结构，比如堆，来代替链表实现更快的调度设计。
 
     void thread_mlfqs_increase_recent_cpu_by_one(void)//最近的cpu增加1。
     {
@@ -134,30 +134,7 @@
     	{
     		return;
     	}
-    	current_thread->recent_cpu=FP_ADD_MIX(current_thread->recent_cpu,1);
-    }
-    
-    void thread_mlfqs_update_load_avg_and_recent_cpu(void)//每秒刷新所有线程的平均负载和最近的cpu。
-    {
-    	ASSERT(thread_mlfqs);
-    	ASSERT(intr_context());
-    	size_t ready_threads=list_size(&ready_list);
-    	if(thread_current()!=idle_thread)
-    	{
-    		ready_threads++;
-    	}
-    	load_avg=FP_ADD(FP_DIV_MIX(FP_MULT_MIX(load_avg,59),60),FP_DIV_MIX(FP_CONST(ready_threads),60));
-    	struct thread *t;
-    	struct list_elem *e=list_begin(&all_list);
-    	for(;e!=list_end(&all_list);e=list_next(e))
-    	{
-    		t=list_entry(e,struct thread,allelem);
-    		if (t!=idle_thread)
-    		{
-    			t->recent_cpu=FP_ADD_MIX(FP_MULT(FP_DIV(FP_MULT_MIX(load_avg,2),FP_ADD_MIX(FP_MULT_MIX(load_avg,2),1)),t->recent_cpu),t->nice);
-    			thread_mlfqs_update_priority(t);
-    		}
-    	}
+    	current_thread->recent_cpu=FP_ADD_MIX(current_thread->recent_cpu,1);//fixed-point操作，定点值相加。
     }
     
     void thread_mlfqs_update_priority(struct thread *t)//更新优先级。
@@ -168,9 +145,33 @@
     	}
     	ASSERT(thread_mlfqs);
     	ASSERT(t!=idle_thread);
-    	t->priority=FP_INT_PART(FP_SUB_MIX(FP_SUB(FP_CONST(PRI_MAX),FP_DIV_MIX(t->recent_cpu,4)),2*t->nice));
+    	t->priority=FP_INT_PART(FP_SUB_MIX(FP_SUB(FP_CONST(PRI_MAX),FP_DIV_MIX(t->recent_cpu,4)),2*t->nice));//fixed-point操作。
     	t->priority=t->priority<PRI_MIN?PRI_MIN:t->priority;
     	t->priority=t->priority>PRI_MAX?PRI_MAX:t->priority;
     }
+    
+    void thread_mlfqs_update_load_avg_and_recent_cpu(void)//每秒刷新所有线程的平均负载和最近的cpu。
+    {
+    	ASSERT(thread_mlfqs);
+    	ASSERT(intr_context());
+    	size_t ready_threads=list_size(&ready_list);//链表大小list_size
+    	if(thread_current()!=idle_thread)
+    	{
+    		ready_threads++;
+    	}
+    	load_avg=FP_ADD(FP_DIV_MIX(FP_MULT_MIX(load_avg,59),60),FP_DIV_MIX(FP_CONST(ready_threads),60));//fixed-point操作，定点值相除。
+    	struct thread *t;
+    	struct list_elem *e;//链表迭代器list_elem指针
+    	for(e=list_begin(&all_list);e!=list_end(&all_list);e=list_next(e))//遍历链表的默认写法
+    	{
+    		t=list_entry(e,struct thread,allelem);//访问链表元素list_entry
+    		if (t!=idle_thread)
+    		{
+    			t->recent_cpu=FP_ADD_MIX(FP_MULT(FP_DIV(FP_MULT_MIX(load_avg,2),FP_ADD_MIX(FP_MULT_MIX(load_avg,2),1)),t->recent_cpu),t->nice);//fixed-point操作。
+    			thread_mlfqs_update_priority(t);//thread.h新函数。更新优先级。
+    		}
+    	}
+    }
+    
 
 
